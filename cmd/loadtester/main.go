@@ -16,6 +16,9 @@ type Stats struct {
 	Successes     uint64
 	Failures      uint64
 	TotalDuration int64 // in nanoseconds
+
+	ErrorMu     sync.Mutex
+	ErrorCounts map[string]uint64
 }
 
 func main() {
@@ -37,7 +40,9 @@ func main() {
 
 	fmt.Printf("Starting load test against %v with %d workers for %v\n", urls, workers, duration)
 
-	var stats Stats
+	stats := Stats{
+		ErrorCounts: make(map[string]uint64),
+	}
 	var wg sync.WaitGroup
 
 	done := make(chan struct{})
@@ -78,11 +83,13 @@ func main() {
 		}
 	}()
 
+	// Custom Transport to optimize connection handling
 	client := &http.Client{
 		Transport: &http.Transport{
 			MaxIdleConns:        workers,
 			MaxIdleConnsPerHost: workers,
 			IdleConnTimeout:     90 * time.Second,
+			// DisableKeepAlives:   false,
 		},
 		Timeout: 5 * time.Second,
 	}
@@ -96,7 +103,7 @@ func main() {
 				case <-done:
 					return
 				default:
-					url := urls[0] // Simple round-robin or random selection can be added if multiple URLs
+					url := urls[0]
 					start := time.Now()
 					resp, err := client.Get(url)
 					elapsed := time.Since(start)
@@ -106,11 +113,18 @@ func main() {
 
 					if err != nil {
 						atomic.AddUint64(&stats.Failures, 1)
+						stats.ErrorMu.Lock()
+						stats.ErrorCounts[err.Error()]++
+						stats.ErrorMu.Unlock()
 					} else {
 						if resp.StatusCode >= 200 && resp.StatusCode < 300 {
 							atomic.AddUint64(&stats.Successes, 1)
 						} else {
 							atomic.AddUint64(&stats.Failures, 1)
+							statusMsg := fmt.Sprintf("HTTP %d", resp.StatusCode)
+							stats.ErrorMu.Lock()
+							stats.ErrorCounts[statusMsg]++
+							stats.ErrorMu.Unlock()
 						}
 						resp.Body.Close()
 					}
@@ -137,4 +151,13 @@ func main() {
 	fmt.Printf("Failures: %d\n", totalFailures)
 	fmt.Printf("Average Latency: %v\n", avgLatency)
 	fmt.Printf("Overall RPS: %.2f\n", float64(totalReqs)/duration.Seconds())
+
+	if totalFailures > 0 {
+		fmt.Println("\nError Details:")
+		stats.ErrorMu.Lock()
+		for errStr, count := range stats.ErrorCounts {
+			fmt.Printf("- %s: %d\n", errStr, count)
+		}
+		stats.ErrorMu.Unlock()
+	}
 }
