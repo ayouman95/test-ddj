@@ -9,8 +9,35 @@ import (
 	"strings"
 	"sync"
 	"sync/atomic"
+	"syscall"
 	"time"
 )
+
+// raiseLimit attempts to maximize the file descriptor limit for this process
+func raiseLimit() {
+	var rLimit syscall.Rlimit
+	if err := syscall.Getrlimit(syscall.RLIMIT_NOFILE, &rLimit); err != nil {
+		log.Printf("Error getting rlimit: %v", err)
+		return
+	}
+
+	log.Printf("Current file descriptor limit: %d (cur) / %d (max)", rLimit.Cur, rLimit.Max)
+
+	// Try to set Cur to Max
+	rLimit.Cur = rLimit.Max
+	if err := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit); err != nil {
+		log.Printf("Error raising rlimit to max: %v", err)
+		// Fallback: try setting to a reasonable high number if Max is infinity or huge
+		if rLimit.Max > 65535 {
+			rLimit.Cur = 65535
+			if err2 := syscall.Setrlimit(syscall.RLIMIT_NOFILE, &rLimit); err2 == nil {
+				log.Printf("Fallback: Raised limit to %d", rLimit.Cur)
+			}
+		}
+	} else {
+		log.Printf("Successfully raised file descriptor limit to %d", rLimit.Cur)
+	}
+}
 
 type Stats struct {
 	Requests      uint64
@@ -23,6 +50,8 @@ type Stats struct {
 }
 
 func main() {
+	raiseLimit()
+
 	var (
 		urlsStr  string
 		workers  int
