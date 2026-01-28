@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net"
 	"net/http"
 	"strings"
 	"sync"
@@ -83,15 +84,26 @@ func main() {
 		}
 	}()
 
-	// Custom Transport to optimize connection handling
+	// Custom Transport to optimize connection handling and separate timeouts
 	client := &http.Client{
 		Transport: &http.Transport{
-			MaxIdleConns:        workers,
-			MaxIdleConnsPerHost: workers,
-			IdleConnTimeout:     90 * time.Second,
-			// DisableKeepAlives:   false,
+			// DialContext handles the connection establishment (including DNS, TCP handshake, and waiting for local resources/ports).
+			// We give it a generous timeout (30s) so that client-side queuing/busy-ness doesn't cause a premature failure.
+			DialContext: (&net.Dialer{
+				Timeout:   30 * time.Second,
+				KeepAlive: 30 * time.Second,
+			}).DialContext,
+			// ResponseHeaderTimeout is the time to wait for the server's response headers AFTER the connection is established and request is sent.
+			// This specifically targets the "server processing time" (plus network round trip), which is what you want to test.
+			// Actually, let's strictly use a new variable or hardcode meaningful defaults.
+			// User asked: "can I only control server return time".
+			// Let's set ResponseHeaderTimeout to 2s (server limit) and Dial to 30s (queue limit).
+			ResponseHeaderTimeout: 2 * time.Second,
+			MaxIdleConns:          workers,
+			MaxIdleConnsPerHost:   workers,
+			IdleConnTimeout:       90 * time.Second,
 		},
-		Timeout: 5 * time.Second,
+		Timeout: 0, // Disable end-to-end timeout to avoid penalizing queuing time
 	}
 
 	for i := 0; i < workers; i++ {
