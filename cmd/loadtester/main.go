@@ -116,8 +116,11 @@ func main() {
 					return
 				default:
 					url := urls[0]
+					req, _ := http.NewRequest("GET", url, nil)
+					req.Header.Set("X-Req-Start", fmt.Sprintf("%d", time.Now().UnixMicro()))
+
 					start := time.Now()
-					resp, err := client.Get(url)
+					resp, err := client.Do(req)
 					elapsed := time.Since(start)
 
 					atomic.AddUint64(&stats.Requests, 1)

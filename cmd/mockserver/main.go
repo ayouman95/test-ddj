@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"log"
 	"math/rand"
 	"net/http"
@@ -9,6 +10,19 @@ import (
 
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Check network/buffer delay
+		if startStr := r.Header.Get("X-Req-Start"); startStr != "" {
+			var clientStartMicros int64
+			fmt.Sscanf(startStr, "%d", &clientStartMicros)
+			serverStart := time.Now()
+
+			// Latency before handler execution (Queue + Network)
+			queueLatency := serverStart.Sub(time.UnixMicro(clientStartMicros))
+			if queueLatency > 100*time.Millisecond {
+				log.Printf("Warning: high queue latency: %v", queueLatency)
+			}
+		}
+
 		// Random sleep between 100ms and 1000ms
 		sleepDuration := time.Duration(100+rand.Intn(901)) * time.Millisecond
 		start := time.Now()
