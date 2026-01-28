@@ -27,11 +27,13 @@ func main() {
 		urlsStr  string
 		workers  int
 		duration time.Duration
+		rampUp   time.Duration
 	)
 
 	flag.StringVar(&urlsStr, "urls", "http://localhost:8080", "Comma-separated list of URLs to test")
 	flag.IntVar(&workers, "workers", 100, "Number of concurrent workers")
 	flag.DurationVar(&duration, "duration", 10*time.Second, "Duration to run the test")
+	flag.DurationVar(&rampUp, "rampup", 0, "Ramp up duration to stagger worker start")
 	flag.Parse()
 
 	urls := strings.Split(urlsStr, ",")
@@ -39,7 +41,7 @@ func main() {
 		log.Fatal("No URLs provided")
 	}
 
-	fmt.Printf("Starting load test against %v with %d workers for %v\n", urls, workers, duration)
+	fmt.Printf("Starting load test against %v with %d workers for %v (rampup: %v)\n", urls, workers, duration, rampUp)
 
 	stats := Stats{
 		ErrorCounts: make(map[string]uint64),
@@ -50,6 +52,11 @@ func main() {
 
 	// Timer to stop the test
 	go func() {
+		// Total duration includes rampUp time to ensure full load runs for 'duration'
+		// actually user usually expects 'duration' to correspond to the load test window.
+		// but if we stagger, the last worker starts at T+rampUp.
+		// Let's simply run for duration + rampUp so the last worker gets chance to run.
+		// Or better: keep 'duration' as the total runtime from start. User should set duration > rampUp.
 		time.Sleep(duration)
 		close(done)
 	}()
@@ -108,8 +115,24 @@ func main() {
 
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
-		go func() {
+
+		// Calculate delay for this worker
+		startDelay := time.Duration(0)
+		if rampUp > 0 {
+			startDelay = time.Duration(float64(rampUp) * float64(i) / float64(workers))
+		}
+
+		go func(delay time.Duration) {
 			defer wg.Done()
+
+			if delay > 0 {
+				select {
+				case <-time.After(delay):
+				case <-done:
+					return
+				}
+			}
+
 			for {
 				select {
 				case <-done:
@@ -145,7 +168,7 @@ func main() {
 					}
 				}
 			}
-		}()
+		}(startDelay)
 	}
 
 	wg.Wait()
