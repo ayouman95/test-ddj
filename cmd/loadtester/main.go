@@ -144,6 +144,8 @@ func main() {
 		Timeout: 0, // Disable end-to-end timeout to avoid penalizing queuing time
 	}
 
+	testStart := time.Now()
+
 	for i := 0; i < workers; i++ {
 		wg.Add(1)
 
@@ -203,6 +205,7 @@ func main() {
 	}
 
 	wg.Wait()
+	actualDuration := time.Since(testStart)
 
 	totalReqs := atomic.LoadUint64(&stats.Requests)
 	totalSuccess := atomic.LoadUint64(&stats.Successes)
@@ -215,11 +218,12 @@ func main() {
 	}
 
 	fmt.Println("\n--- Test Finished ---")
+	fmt.Printf("Actual Test Duration: %v\n", actualDuration)
 	fmt.Printf("Total Requests: %d\n", totalReqs)
 	fmt.Printf("Successes: %d\n", totalSuccess)
 	fmt.Printf("Failures: %d\n", totalFailures)
 	fmt.Printf("Average Latency: %v\n", avgLatency)
-	fmt.Printf("Overall RPS: %.2f\n", float64(totalReqs)/duration.Seconds())
+	fmt.Printf("Overall RPS: %.2f\n", float64(totalReqs)/actualDuration.Seconds())
 
 	if totalFailures > 0 {
 		fmt.Println("\nError Details:")
