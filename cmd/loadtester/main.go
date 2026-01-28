@@ -57,12 +57,14 @@ func main() {
 		workers  int
 		duration time.Duration
 		rampUp   time.Duration
+		timeout  time.Duration
 	)
 
 	flag.StringVar(&urlsStr, "urls", "http://localhost:8080", "Comma-separated list of URLs to test")
 	flag.IntVar(&workers, "workers", 100, "Number of concurrent workers")
 	flag.DurationVar(&duration, "duration", 10*time.Second, "Duration to run the test")
 	flag.DurationVar(&rampUp, "rampup", 0, "Ramp up duration to stagger worker start")
+	flag.DurationVar(&timeout, "timeout", 2*time.Second, "Response header timeout")
 	flag.Parse()
 
 	urls := strings.Split(urlsStr, ",")
@@ -70,7 +72,7 @@ func main() {
 		log.Fatal("No URLs provided")
 	}
 
-	fmt.Printf("Starting load test against %v with %d workers for %v (rampup: %v)\n", urls, workers, duration, rampUp)
+	fmt.Printf("Starting load test against %v with %d workers for %v (rampup: %v, timeout: %v)\n", urls, workers, duration, rampUp, timeout)
 
 	stats := Stats{
 		ErrorCounts: make(map[string]uint64),
@@ -134,7 +136,7 @@ func main() {
 			// Actually, let's strictly use a new variable or hardcode meaningful defaults.
 			// User asked: "can I only control server return time".
 			// Let's set ResponseHeaderTimeout to 2s (server limit) and Dial to 30s (queue limit).
-			ResponseHeaderTimeout: 2 * time.Second,
+			ResponseHeaderTimeout: timeout,
 			MaxIdleConns:          workers,
 			MaxIdleConnsPerHost:   workers,
 			IdleConnTimeout:       90 * time.Second,
