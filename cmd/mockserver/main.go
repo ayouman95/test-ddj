@@ -1,0 +1,23 @@
+package main
+
+import (
+	"log"
+	"math/rand"
+	"net/http"
+	"time"
+)
+
+func main() {
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		// Random sleep between 100ms and 1000ms
+		sleepDuration := time.Duration(100+rand.Intn(901)) * time.Millisecond
+		time.Sleep(sleepDuration)
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("OK"))
+	})
+
+	log.Println("Mock server started on :8080")
+	if err := http.ListenAndServe(":8080", nil); err != nil {
+		log.Fatalf("Server failed: %v", err)
+	}
+}
